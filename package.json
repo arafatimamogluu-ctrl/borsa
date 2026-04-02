@@ -8,7 +8,8 @@
     "build": "tsc && vite build",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
-    "server": "tsx server/src/index.ts"
+    "server": "tsx server/src/index.ts",
+    "start": "tsx server/src/index.ts"
   },
   "dependencies": {
     "@types/html2pdf.js": "^0.10.0",
