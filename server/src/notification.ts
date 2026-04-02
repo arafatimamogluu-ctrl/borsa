@@ -28,13 +28,22 @@ export class NotificationService {
 
     const best = analysis[0];
     let msg = `<b>🚀 GÜNÜN SEÇİMİ: ${best.symbol}</b>\n\n`;
+    msg += `📊 <b>Analiz Skoru: ${best.score} / 1000</b>\n`;
+    msg += `━━━━━━━━━━━━━━━━\n`;
     msg += `💰 Fiyat: ${best.currentPrice.toFixed(2)} ₺\n`;
     msg += `📈 Potansiyel: %${best.potentialProfit.toFixed(1)}\n`;
     msg += `🎯 Hedef 1: ${best.targets.target1.toFixed(2)} ₺\n`;
     msg += `🛑 Stop-Loss: ${best.targets.stopLoss.toFixed(2)} ₺\n`;
     msg += `⏱️ Beklenti: ${best.expectedDays} Gün\n`;
     msg += `✅ Güven: %${best.confidence}\n\n`;
-    msg += `<b>Neden Seçildi?</b>\n`;
+    
+    msg += `<b>🔍 Skor Dağılımı:</b>\n`;
+    msg += `• Teknik: ${best.technicalScore}/400\n`;
+    msg += `• Hacim: ${best.volumeScore}/200\n`;
+    msg += `• Duyarlılık: ${best.sentimentScore}/200\n`;
+    msg += `• Temel: ${best.fundamentalScore}/200\n\n`;
+
+    msg += `<b>📝 Seçim Gerekçeleri:</b>\n`;
     best.reasoning.forEach((r: string) => {
       msg += `- ${r}\n`;
     });

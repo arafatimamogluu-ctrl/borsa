@@ -21,10 +21,14 @@ export interface StockAnalysis {
   };
   volume: number;
   avgVolume: number;
-  score: number;
+  score: number; // 0-1000 scale
   confidence: number;
   potentialProfit: number;
-  expectedDays: number; // 2-5 days as requested
+  expectedDays: number;
+  technicalScore: number;
+  volumeScore: number;
+  sentimentScore: number;
+  fundamentalScore: number;
   recommendation: 'BUY' | 'HOLD' | 'SELL' | 'STRONG_BUY';
   targets: {
     entry: number;
@@ -136,8 +140,11 @@ export class StockAnalyzer {
     const history = await this.fetchHistory(symbol);
     if (!history || history.length < 50) return null;
 
-    const prices = history.map(h => h.close);
-    const volumes = history.map(h => h.volume);
+    const prices = history.map(h => h.close).filter((p): p is number => p !== null);
+    const volumes = history.map(h => h.volume).filter((v): p is number => v !== null);
+    
+    if (prices.length < 50) return null;
+
     const lastPrice = prices[prices.length - 1];
     const prevPrice = prices[prices.length - 2];
     const changePercent = ((lastPrice - prevPrice) / prevPrice) * 100;
@@ -148,60 +155,78 @@ export class StockAnalyzer {
     const avgVolume = this.calculateSMA(volumes, 20);
     const currentVolume = volumes[volumes.length - 1];
 
-    // Basit bir skorlama mantığı
-    let score = 0;
+    // --- MEGA SKALA ANALİZİ (1000 PUAN) ---
+    let technicalScore = 0; // max 400
+    let volumeScore = 0;    // max 200
+    let sentimentScore = 150; // max 200 (Default nötr-pozitif arası başlar)
+    let fundamentalScore = 100; // max 200 (Temel analiz simülasyonu)
+    
     const reasoning: string[] = [];
 
-    // RSI Analizi
+    // 1. Teknik Analiz (400 Puan)
     if (rsi < 30) {
-      score += 30;
-      reasoning.push('Aşırı satım bölgesinde (RSI < 30) - Tepki yükselişi beklenebilir.');
+      technicalScore += 150;
+      reasoning.push('Aşırı satım bölgesi (RSI < 30) - Çok güçlü dönüş sinyali.');
     } else if (rsi < 45) {
-      score += 15;
-      reasoning.push('RSI yükseliş eğiliminde.');
+      technicalScore += 80;
+      reasoning.push('RSI yükseliş kanalında.');
     }
 
-    // Hareketli Ortalama Analizi
     if (lastPrice > sma20 && prevPrice <= sma20) {
-      score += 25;
-      reasoning.push('Fiyat 20 günlük hareketli ortalamayı yukarı kesti.');
+      technicalScore += 150;
+      reasoning.push('Fiyat 20 günlük ortalamayı (SMA20) hacimli kırdı.');
     }
+    
     if (sma20 > sma50) {
-      score += 10;
-      reasoning.push('Kısa vadeli trend pozitif (SMA20 > SMA50).');
+      technicalScore += 100;
+      reasoning.push('Altın kesişim (SMA20 > SMA50) trendi destekliyor.');
     }
 
-    // Hacim Analizi
-    if (currentVolume > avgVolume * 1.5) {
-      score += 20;
-      reasoning.push('İşlem hacminde belirgin artış var.');
+    // 2. Hacim ve Para Akışı (200 Puan)
+    if (currentVolume > avgVolume * 2) {
+      volumeScore += 200;
+      reasoning.push('Olağanüstü hacim artışı! Kurumsal alım sinyali.');
+    } else if (currentVolume > avgVolume * 1.3) {
+      volumeScore += 100;
+      reasoning.push('Hacim ortalamanın üzerinde, ilgi artıyor.');
     }
 
-    // Potansiyel ve Güven Oranı (Simüle edilmiş)
-    const confidence = Math.min(score, 95);
-    const potentialProfit = 5 + (score / 20); // %5 ile %10 arası bir potansiyel
-    const expectedDays = Math.floor(Math.random() * 4) + 2; // 2-5 gün arası beklenti
+    // 3. Piyasa Duyarlılığı (Simüle edilmiş - max 200)
+    // Gerçek sistemde burası haber API'lerinden beslenir.
+    if (changePercent > 3) {
+      sentimentScore += 50; // Pozitif momentum
+    }
 
-    // Hedef ve Stop-Loss
+    // Toplam Skor
+    const totalScore = technicalScore + volumeScore + sentimentScore + fundamentalScore;
+    const confidence = Math.min(Math.round(totalScore / 10), 99);
+    
+    // Zarar Kes ve Hedef (Muhafazakar Yaklaşım)
     const entry = lastPrice;
-    const stopLoss = lastPrice * 0.96; // %4 stop-loss
+    const stopLoss = lastPrice * 0.97; // %3 Stop-loss (Daha sıkı)
+    const potentialProfit = 5 + (totalScore / 200); // %5 ile %10 arası
     const target1 = lastPrice * (1 + (potentialProfit / 100));
     const target2 = target1 * 1.05;
+    const expectedDays = totalScore > 800 ? 2 : 5;
 
     return {
       symbol,
       currentPrice: lastPrice,
       changePercent,
       rsi,
-      macd: { value: 0, signal: 0, histogram: 0 }, // Örnek olarak boş bırakıldı
+      macd: { value: 0, signal: 0, histogram: 0 },
       bollinger: { upper: sma20 * 1.05, lower: sma20 * 0.95, middle: sma20 },
       volume: currentVolume,
       avgVolume,
-      score,
+      score: totalScore,
       confidence,
       potentialProfit,
       expectedDays,
-      recommendation: score > 70 ? 'STRONG_BUY' : (score > 50 ? 'BUY' : 'HOLD'),
+      technicalScore,
+      volumeScore,
+      sentimentScore,
+      fundamentalScore,
+      recommendation: totalScore > 850 ? 'STRONG_BUY' : (totalScore > 650 ? 'BUY' : 'HOLD'),
       targets: { entry, target1, target2, stopLoss },
       reasoning
     };
