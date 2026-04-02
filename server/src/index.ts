@@ -21,6 +21,7 @@ app.use(express.json());
 
 let lastAnalysisResults: StockAnalysis[] = [];
 let notifiedNewsLinks: Set<string> = new Set(); // Mükerrer haber kontrolü
+let currentMonitorIndex = 0; // 560+ hisseyi sırayla taramak için index
 const RESULTS_FILE = path.join(__dirname, '../data/last_analysis.json');
 
 // Ensure data directory exists
@@ -98,12 +99,19 @@ const runRealTimeMonitor = async () => {
 
   // Sadece Borsa İstanbul açıkken çalış (Hafta içi 10:00 - 18:15 TRT)
   if (day >= 1 && day <= 5 && hour >= 10 && hour <= 18) {
-    console.log('Running high-frequency monitor...');
+    console.log(`Running high-frequency monitor (Index: ${currentMonitorIndex})...`);
     try {
-      // En kritik ilk 20 hisseyi (BIST30 ağırlıklı) her dakikada bir kontrol et
-      const topSymbols = BIST_SYMBOLS.slice(0, 20); 
+      // 560+ hisseyi her seferinde 40'ar tane tarayarak ilerleyelim
+      const CHUNK_SIZE = 40;
+      const symbols = BIST_SYMBOLS.slice(currentMonitorIndex, currentMonitorIndex + CHUNK_SIZE);
       
-      for (const symbol of topSymbols) {
+      // Index'i bir sonraki tur için güncelle, sona gelirse başa sar
+      currentMonitorIndex += CHUNK_SIZE;
+      if (currentMonitorIndex >= BIST_SYMBOLS.length) {
+        currentMonitorIndex = 0;
+      }
+
+      for (const symbol of symbols) {
         const analysis = await StockAnalyzer.analyzeStock(symbol);
         // Çok yüksek skorlu bir fırsat yakalanırsa (920+ puan)
         if (analysis && analysis.score > 920) {
@@ -130,8 +138,8 @@ cron.schedule('15 9 * * 1-5', runMorningReminder); // Mon-Fri at 09:15 TRT
 // ANLIK HABER TAKİBİ: Her 2 dakikada bir (Market saatlerinde)
 cron.schedule('*/2 10-18 * * 1-5', runNewsUpdate); 
 
-// ANLIK FIRSAT TAKİBİ: Her 1 dakikada bir (Market saatlerinde en kritik 20 hisse için)
-cron.schedule('* 10-18 * * 1-5', runRealTimeMonitor);
+// ANLIK FIRSAT TAKİBİ: Her 30 saniyede bir (560+ hisseyi parça parça tarar)
+cron.schedule('*/30 * 10-18 * * 1-5', runRealTimeMonitor);
 
 app.get('/api/analysis', (req, res) => {
   res.json(lastAnalysisResults);
