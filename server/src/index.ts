@@ -101,6 +101,13 @@ const runRealTimeMonitor = async () => {
   if (day >= 1 && day <= 5 && hour >= 10 && hour <= 18) {
     console.log(`Running high-frequency monitor (Index: ${currentMonitorIndex})...`);
     try {
+      // Önce Endeks Durumuna Bak
+      const indexHealth = await StockAnalyzer.getIndexHealth();
+      if (indexHealth.status === 'DANGER') {
+        console.log('Index is crashing! Skipping high-frequency monitor for safety.');
+        return;
+      }
+
       // 560+ hisseyi her seferinde 40'ar tane tarayarak ilerleyelim
       const CHUNK_SIZE = 40;
       const symbols = BIST_SYMBOLS.slice(currentMonitorIndex, currentMonitorIndex + CHUNK_SIZE);
@@ -115,8 +122,13 @@ const runRealTimeMonitor = async () => {
         const analysis = await StockAnalyzer.analyzeStock(symbol);
         // Çok yüksek skorlu bir fırsat yakalanırsa (920+ puan)
         if (analysis && analysis.score > 920) {
-          const alertMsg = `<b>🚨 SALİSELİK FIRSAT SİNYALİ (AŞİL TESPİTİ)</b>\n\n` + 
-                          NotificationService.formatAnalysisReport([analysis]);
+          let alertHeader = `<b>🚨 SALİSELİK FIRSAT SİNYALİ (AŞİL TESPİTİ)</b>\n\n`;
+          if (indexHealth.status === 'RISKY') {
+            alertHeader = `<b>⚠️ RİSKLİ PİYASA UYARISI: ${indexHealth.change.toFixed(2)}%</b>\n` + 
+                          `<i>Endeks zayıf ama bu hisse pozitif ayrışıyor:</i>\n\n`;
+          }
+          
+          const alertMsg = alertHeader + NotificationService.formatAnalysisReport([analysis]);
           await NotificationService.sendTelegramMessage(alertMsg);
           console.log(`Instant alert sent for ${symbol}`);
         }

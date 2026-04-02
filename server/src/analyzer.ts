@@ -287,4 +287,19 @@ export class StockAnalyzer {
       return [];
     }
   }
+
+  static async getIndexHealth(): Promise<{ status: 'OK' | 'RISKY' | 'DANGER', change: number }> {
+    try {
+      const quote = await yf.quote('XU100.IS');
+      if (!quote) return { status: 'OK', change: 0 };
+      
+      const change = quote.regularMarketChangePercent || 0;
+      
+      if (change < -2) return { status: 'DANGER', change };
+      if (change < -0.5) return { status: 'RISKY', change };
+      return { status: 'OK', change };
+    } catch (error) {
+      return { status: 'OK', change: 0 };
+    }
+  }
 }
