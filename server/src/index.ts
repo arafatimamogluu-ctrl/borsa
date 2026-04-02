@@ -20,6 +20,7 @@ app.use(cors());
 app.use(express.json());
 
 let lastAnalysisResults: StockAnalysis[] = [];
+let notifiedNewsLinks: Set<string> = new Set(); // Mükerrer haber kontrolü
 const RESULTS_FILE = path.join(__dirname, '../data/last_analysis.json');
 
 // Ensure data directory exists
@@ -63,13 +64,26 @@ const runMorningReminder = async () => {
 };
 
 const runNewsUpdate = async () => {
-  console.log('Running news update...');
+  console.log('Checking for new news...');
   try {
     const news = await StockAnalyzer.fetchNews();
     if (news && news.length > 0) {
-      const newsMsg = NotificationService.formatNewsUpdate(news);
-      if (newsMsg) {
-        await NotificationService.sendTelegramMessage(newsMsg);
+      // Sadece daha önce gönderilmemiş haberleri filtrele
+      const newNews = news.filter(n => !notifiedNewsLinks.has(n.link));
+      
+      if (newNews.length > 0) {
+        const newsMsg = NotificationService.formatNewsUpdate(newNews);
+        if (newsMsg) {
+          await NotificationService.sendTelegramMessage(newsMsg);
+          // Gönderilenleri hafızaya al
+          newNews.forEach(n => notifiedNewsLinks.add(n.link));
+          
+          // Hafızayı çok büyütmemek için son 1000 haberi tut
+          if (notifiedNewsLinks.size > 1000) {
+            const linksArray = Array.from(notifiedNewsLinks);
+            notifiedNewsLinks = new Set(linksArray.slice(-1000));
+          }
+        }
       }
     }
   } catch (error) {
@@ -86,19 +100,17 @@ const runRealTimeMonitor = async () => {
   if (day >= 1 && day <= 5 && hour >= 10 && hour <= 18) {
     console.log('Running high-frequency monitor...');
     try {
-      // Tüm hisseleri taramak yerine sadece hacim ve fiyatı değişenleri hızlıca kontrol et
-      // Not: Yahoo Finance hızı nedeniyle burada 560 hisseyi tek tek taramak yerine 
-      // en popüler 100 hisseyi veya son analizdeki top listesini taramak daha mantıklı.
-      // Ancak kullanıcının isteği üzerine tam tarama yapılacaksa daha uzun aralık seçilmeli.
-      const topSymbols = BIST_SYMBOLS.slice(0, 100); // Şimdilik ilk 100 ile başlayalım
+      // En kritik ilk 20 hisseyi (BIST30 ağırlıklı) her dakikada bir kontrol et
+      const topSymbols = BIST_SYMBOLS.slice(0, 20); 
       
       for (const symbol of topSymbols) {
         const analysis = await StockAnalyzer.analyzeStock(symbol);
-        if (analysis && analysis.score > 900) { // Sadece aşırı güvenli olanlar
-          const alertMsg = `<b>🚨 ANLIK FIRSAT SİNYALİ (AŞİL TESPİTİ)</b>\n\n` + 
+        // Çok yüksek skorlu bir fırsat yakalanırsa (920+ puan)
+        if (analysis && analysis.score > 920) {
+          const alertMsg = `<b>🚨 SALİSELİK FIRSAT SİNYALİ (AŞİL TESPİTİ)</b>\n\n` + 
                           NotificationService.formatAnalysisReport([analysis]);
           await NotificationService.sendTelegramMessage(alertMsg);
-          console.log(`Real-time alert sent for ${symbol}`);
+          console.log(`Instant alert sent for ${symbol}`);
         }
       }
     } catch (error) {
@@ -115,11 +127,11 @@ cron.schedule('30 18 * * 1-5', runDailyAnalysis); // Mon-Fri at 18:30 TRT
 // 09:15 TRT is 06:15 UTC
 cron.schedule('15 9 * * 1-5', runMorningReminder); // Mon-Fri at 09:15 TRT
 
-// Schedule news update for every 30 minutes during market hours
-cron.schedule('*/30 10-18 * * 1-5', runNewsUpdate); 
+// ANLIK HABER TAKİBİ: Her 2 dakikada bir (Market saatlerinde)
+cron.schedule('*/2 10-18 * * 1-5', runNewsUpdate); 
 
-// Schedule high-frequency monitor for every 15 minutes during market hours
-cron.schedule('*/15 10-18 * * 1-5', runRealTimeMonitor);
+// ANLIK FIRSAT TAKİBİ: Her 1 dakikada bir (Market saatlerinde en kritik 20 hisse için)
+cron.schedule('* 10-18 * * 1-5', runRealTimeMonitor);
 
 app.get('/api/analysis', (req, res) => {
   res.json(lastAnalysisResults);
