@@ -2,9 +2,13 @@ import express from 'express';
 import cors from 'cors';
 import cron from 'node-cron';
 import { StockAnalyzer, StockAnalysis } from './analyzer.js';
+import { NotificationService } from './notification.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -34,6 +38,11 @@ const runDailyAnalysis = async () => {
     const results = await StockAnalyzer.analyzeAll();
     lastAnalysisResults = results;
     fs.writeFileSync(RESULTS_FILE, JSON.stringify(results, null, 2));
+    
+    // Send notification
+    const reportMsg = NotificationService.formatAnalysisReport(results);
+    await NotificationService.sendTelegramMessage(reportMsg);
+    
     console.log('Analysis complete. Best stocks:', results.slice(0, 5).map(s => s.symbol));
   } catch (error) {
     console.error('Error during daily analysis:', error);
